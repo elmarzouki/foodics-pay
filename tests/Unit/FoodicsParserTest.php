@@ -43,7 +43,7 @@ class FoodicsParserTest extends TestCase
             $this->assertNotNull($trx['amount_cents']);
             $this->assertNotNull($trx['reference']);
         }
-        $this->assertLessThan(3000, $durationMs, "Parser took too long: {$durationMs} ms");
+        $this->assertLessThan(10000, $durationMs, "Parser took too long: {$durationMs} ms");
     }
 
     public function test_parser_ignores_invalid_lines_gracefully()

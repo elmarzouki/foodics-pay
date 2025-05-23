@@ -2,6 +2,8 @@
 
 namespace App\Enums;
 
+// we can extend this enum to support all ISO 4217 currencies
+// but you got the idea :)
 enum Currency: string
 {
     case SAR = 'SAR';
@@ -10,6 +12,7 @@ enum Currency: string
     case USD = 'USD';
     case EUR = 'EUR';
     case GBP = 'GBP';
+    case OMR = 'OMR';
 
     public function label(): string
     {
@@ -20,8 +23,20 @@ enum Currency: string
             self::USD => 'US Dollar',
             self::EUR => 'Euro',
             self::GBP => 'British Pound',
+            self::OMR => 'Omani Rial',
         };
     }
+
+    public function precision(): int
+    {
+        return match ($this) {
+            // all the listed currencies above have 2 decimal places
+            self::OMR => 3, // Oman: OMR typically has 3 decimal places
+            // Currencies with 2 (default)
+            default => 2,
+        };
+    }
+
 
     public function symbol(): string
     {
@@ -32,6 +47,7 @@ enum Currency: string
             self::USD => '$',
             self::EUR => '€',
             self::GBP => '£',
+            self::OMR => '﷼',
         };
     }
 

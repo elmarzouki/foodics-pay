@@ -58,7 +58,7 @@ Receiving Money
         └─────────────────────────────┘
                     │
                     ▼
-            RabbitMQ (durable queue)
+            RabbitMQ (webhook_queue)
                     │
         [Workers with feature flag check]
                     ▼
@@ -85,6 +85,23 @@ CRON ──> control-webhook-worker
     Start/Stop supervisor queue_worker
 ```
 
+Sending Money
+```
+[Client] ──> [POST /api/v1/transfer]
+                │
+                ▼
+    ┌─────────────────────────────┐
+    │  Controller call transfer   │
+    │          xml builder        │
+    └─────────────────────────────┘
+                │
+                ▼
+        RabbitMQ (transfer_xml_queue)
+                │
+                ▼
+    Store generated XML to storage
+            
+```
 ## Tech Stack
 - Laravel
 - Nginx
@@ -120,6 +137,9 @@ docker exec -it foodics-pay-app tail -f storage/logs/laravel.log
 docker exec -it foodics-pay-app tail -f storage/logs/scheduler.log
 docker exec -it foodics-pay-app tail -f storage/logs/worker.log
 docker exec -it foodics-pay-app tail -f storage/logs/control-worker.log
+
+# generated XML
+docker exec -it foodics-pay-app cat storage/app/private/transfers/{transfer-ref}.xml
 ```
 
 ## Usage
@@ -149,4 +169,20 @@ curl -X POST http://localhost:8000/api/v1/webhook/acme \
 
 Sending Money
 ```bash
+# reference and date are optional
+curl -X POST http://localhost:8000/api/v1/transfer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reference": "7b6c2616-2244-4f27-88e6-c9ea76eafc97",
+    "date": "2025-06-01T12:00:00+03:00",
+    "amount": 177.39,
+    "currency": "SAR",
+    "sender_account": "SA6980000204608016212908",
+    "receiver_account": "SA6980000204608016211111",
+    "receiver_name": "Jane Doe",
+    "bank_code": "FDCSSARI",
+    "notes": ["debt payment", "March"],
+    "payment_type": "421",
+    "charge_details": "RB"
+}'
 ```

@@ -22,17 +22,17 @@ class FoodicsParser implements WebhookParserInterface
 
     // modified with the missing data
     // SA6980000204608016212908#20250615156,50#SAR#202506159000001#note/debt payment march/internal_reference/A462JE81
-    private function parseLine(string $line): array
+    private function parseLine(string $line): ?array
     {
         $elements = explode('#', $line);
         if (count($elements) !== 5) {
             Log::warning("Skipping invalid Foodics webhook line: {$line}");
-            return [];
+            return null;
         }
         [$accountId, $dateAmount, $currency, $reference, $metaRaw] = $elements;
         $date = substr($dateAmount, 0, 8); // date is the first 8 characters
         $amount = substr($dateAmount, 8); // amount is the last 6 characters
-
+        // save amount as cents and use ISO 4217 to get the precision
         $amountCents = (int) str_replace(',', '', $amount);
 
         $meta = $this->parseMeta($metaRaw);

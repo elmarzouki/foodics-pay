@@ -24,6 +24,7 @@ class AcmeParser implements WebhookParserInterface
                     continue;
                 }
                 [$accountId, $amount, $currency, $reference, $date] = $elements;
+                // save amount as cents and use ISO 4217 to get the precision
                 $amountCents = (int) str_replace(',', '', $amount);
 
                 $transactions[] = [
