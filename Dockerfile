@@ -13,10 +13,11 @@ RUN apk add --no-cache \
     libxml2-dev \
     zip \
     unzip \
-    postgresql-dev
+    postgresql-dev \
+    supervisor
 
 # Install PHP extensions
-RUN docker-php-ext-install pdo_pgsql bcmath exif pcntl gd
+RUN docker-php-ext-install pdo_pgsql bcmath exif pcntl gd sockets
 
 # Get latest Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
@@ -29,14 +30,16 @@ COPY . .
 
 # Install dependencies
 RUN composer install --no-interaction --no-dev --optimize-autoloader
-RUN npm install
-RUN npm run build
+RUN npm install && npm run build
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 
-# Expose port 9000
+# Copy Supervisor config
+COPY ./docker/supervisor/supervisord.conf /etc/supervisor/supervisord.conf
+
+# Expose PHP-FPM port
 EXPOSE 9000
 
-# Start PHP-FPM
-CMD ["php-fpm"] 
+# Start Supervisor
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]

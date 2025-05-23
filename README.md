@@ -1,61 +1,152 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Foodics pay Coding Challenge 
+This is a basic app to ingest incoming webhooks from different banks and construct transfer payloads.
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+## Content
+- Definitions/Facts
+- Assumptions
+- Tools/Architecture
+- Setup/Run
 
-## About Laravel
+## Definitions/Facts
+* General:
+    1. It is acceptable to over-engineer the solution.
+* Sending Money:
+    1. Focus on generating the XML only.
+    2. Ignore communication with the bank or tracking the transfer in the database are out of scope.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+* Receiving Money: 
+    1. the app should parse the transaction line and import it into the database.
+    2. attaching it to the client in the process.
+    3. the bank will sometimes report the same transaction twice or more.
+    4. this should have no effect on the final state of a client's transactions list.
+    5. Also the app must be able to stop processing webhooks (ingestion) without dropping the incoming webhooks.
+    6. Amount (two decimals).
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Assumptions
+* Client ID:
+    - we will refer to the client as account. to narrow the scope. as the client might have multiple bank accounts.
+    - will assume that the banks will send the account_id in the webhook payload as the first attribute.
+    - the bank sent account_id is the same as our account_id.
+    - we will consider the account_id with the transaction reference_id as a unique role.
 
-## Learning Laravel
+* Transactions:
+    - based on sending money definitions 1, and 2 no need for the double entry implementation.
+    - we will focus only on saving the received transactions only.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+* Currency and Amounts:
+    - Also will assume that the banks will send a valid currency in the payload.
+    - the Currency will be sent Code String(SAR) not Number(682).
+    - and we will store the amount as amount_cents for easier transformation and calculations
+    - then we can use ISO 4217 to display the decimal points.
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+* Webhooks:
+We have added bank_account_id and currency to the payload as they were needed in the current setup
+Assuming that any bank can provide them by default.
+    - Foodics Bank  => "SA6980000204608016212908#20250615156,50#SAR#202506159000001#note/debt payment march/internal_reference/A462JE81"
+    - Acme Bank     => "SA6980000204608016212908//156,50//SAR//202506159000001//20250615"
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Architecture:
+Receiving Money
+```
+[Client] ──> [POST /api/v1/webhook/{bank}]
+                    │
+                    ▼
+        ┌─────────────────────────────┐
+        │ Controller stores message   │
+        │ in RabbitMQ (persistent)    │
+        └─────────────────────────────┘
+                    │
+                    ▼
+            RabbitMQ (durable queue)
+                    │
+        [Workers with feature flag check]
+                    ▼
+    If enabled → Parse → Check Deduplicate 
+    (Redis then DB) → Save Transaction 
+    If disabled → Job remains queued
+```
 
-## Laravel Sponsors
+Webhooks (ingestion) toggle
+```
+CMD ──> toggle-webhook-ingestion
+                │
+                ▼
+    Update Redis & Feature Flags Table
+                │
+                ▼
+    If enabled -> Ingest on queue_worker
+        If disabled -> Return
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+CRON ──> control-webhook-worker
+                │
+    Checks status each min from Redis
+                ▼
+    Start/Stop supervisor queue_worker
+```
 
-### Premium Partners
+## Tech Stack
+- Laravel
+- Nginx
+- PostgreSQL
+- RabbitMQ
+- Redis
+- Docker
+- Supervisor
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
 
-## Contributing
+## Setup/Run
+Using docker-compose:
+```bash
+docker-compose up -d --build
+docker exec -it foodics-pay-app php artisan migrate
+chmod +x scripts/control-webhook-worker.sh
+```
+## Test
+```bash
+docker exec -it foodics-pay-app php artisan test
+```
+## Monitor
+```bash
+# check supervisor status
+docker exec -it foodics-pay-app supervisorctl -s http://localhost:9001 status
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+# logs
+docker-compose logs -f
+docker logs foodics-pay-nginx -f
+docker logs foodics-pay-rabbitmq -f
 
-## Code of Conduct
+docker exec -it foodics-pay-app tail -f storage/logs/laravel.log
+docker exec -it foodics-pay-app tail -f storage/logs/scheduler.log
+docker exec -it foodics-pay-app tail -f storage/logs/worker.log
+docker exec -it foodics-pay-app tail -f storage/logs/control-worker.log
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Usage
+health-check
+```bash
+curl http://localhost:8000/api/v1/health_check
+```
 
-## Security Vulnerabilities
+Webhooks (ingestion) toggle
+```bash
+docker exec -it foodics-pay-app php artisan app:toggle-webhook-ingestion enable/disable
+docker exec -it foodics-pay-app php artisan app:check webhook_ingestion # custom check for the feature flags
+docker exec -it foodics-pay-app php artisan schedule:list
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Receiving Money
+```bash
+curl -X POST http://localhost:8000/api/v1/webhook/foodics \
+    -H "Content-Type: text/plain" \
+    --data "SA6980000204608016212908#20250615156,50#SAR#202506159000001#note/debt payment march/internal_reference/A462JE81"
 
-## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+curl -X POST http://localhost:8000/api/v1/webhook/acme \
+    -H "Content-Type: text/plain" \
+    --data "SA6980000204608016212908//156,50//SAR//202506159000001//20250615"
+```
+
+Sending Money
+```bash
+```

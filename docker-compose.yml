@@ -9,6 +9,12 @@ services:
     working_dir: /var/www
     volumes:
       - ./:/var/www
+      - ./docker/supervisor/supervisord.conf:/etc/supervisord.conf
+    depends_on:
+      - db
+      - rabbitmq
+    environment:
+      - QUEUE_CONNECTION=rabbitmq
     networks:
       - foodics-pay-network
 
@@ -40,9 +46,38 @@ services:
     networks:
       - foodics-pay-network
 
+  redis:
+    image: redis:alpine
+    container_name: foodics-pay-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    networks:
+      - foodics-pay-network
+    command: redis-server --appendonly yes
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: foodics-pay-rabbitmq
+    restart: unless-stopped
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
+    ports:
+      - "5672:5672"   # AMQP protocol port
+      - "15672:15672" # Management UI port
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    networks:
+      - foodics-pay-network
+
 networks:
   foodics-pay-network:
     driver: bridge
 
 volumes:
-  dbdata: 
+  dbdata:
+  redisdata:
+  rabbitmqdata: 
