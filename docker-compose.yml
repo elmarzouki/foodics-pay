@@ -1,0 +1,83 @@
+version: '3'
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: foodics-pay-app
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+      - ./docker/supervisor/supervisord.conf:/etc/supervisord.conf
+    depends_on:
+      - db
+      - rabbitmq
+    environment:
+      - QUEUE_CONNECTION=rabbitmq
+    networks:
+      - foodics-pay-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: foodics-pay-nginx
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    volumes:
+      - ./:/var/www
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+    networks:
+      - foodics-pay-network
+
+  db:
+    image: postgres:15-alpine
+    container_name: foodics-pay-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - foodics-pay-network
+
+  redis:
+    image: redis:alpine
+    container_name: foodics-pay-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    networks:
+      - foodics-pay-network
+    command: redis-server --appendonly yes
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: foodics-pay-rabbitmq
+    restart: unless-stopped
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD}
+    ports:
+      - "5672:5672"   # AMQP protocol port
+      - "15672:15672" # Management UI port
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    networks:
+      - foodics-pay-network
+
+networks:
+  foodics-pay-network:
+    driver: bridge
+
+volumes:
+  dbdata:
+  redisdata:
+  rabbitmqdata: 
