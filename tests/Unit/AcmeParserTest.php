@@ -3,30 +3,45 @@
 namespace Tests\Unit;
 
 use Tests\TestCase;
+use Faker\Factory as Faker;
 use App\Http\Services\Webhook\Parsers\AcmeParser;
-use Tests\WebhookPayloadGenerator;
+use Tests\Factories\WebhookPayloadFactory;
 
 class AcmeParserTest extends TestCase
 {
+    protected $faker;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->faker = Faker::create();
+    }
+
     public function test_parses_valid_acme_line()
     {
-        $line = 'SA6980000204608016212908//156,50//SAR//202506159000001//20250615';
-        $parser = new AcmeParser();
+        $accountId = 'SA' . $this->faker->numerify('###000000###########');
+        $amount = number_format($this->faker->randomFloat(2, 100, 9999), 2, ',', '');
+        $currency = 'SAR';
+        $date = now()->format('Ymd');
+        $reference = $date . $this->faker->numerify('######');
 
+        $line = "{$accountId}//{$amount}//{$currency}//{$reference}//{$date}";
+        $parser = new AcmeParser();
         $results = $parser->parse($line);
 
         $this->assertCount(1, $results);
         $trx = $results[0];
 
-        $this->assertEquals('SA6980000204608016212908', $trx['bank_account_id']);
-        $this->assertEquals(15650, $trx['amount_cents']);
-        $this->assertEquals('SAR', $trx['currency']);
-        $this->assertEquals('202506159000001', $trx['reference']);
+        $amountCents = (int) str_replace(',', '', $amount);
+        $this->assertEquals($accountId, $trx['bank_account_id']);
+        $this->assertEquals($amountCents, $trx['amount_cents']);
+        $this->assertEquals($currency, $trx['currency']);
+        $this->assertEquals($reference, $trx['reference']);
     }
 
     public function test_parsing_1000_transactions_is_fast_enough()
     {
-        $payload = WebhookPayloadGenerator::acme(1000);
+        $payload = WebhookPayloadFactory::acme(1000);
         $parser = new AcmeParser();
 
         $start = microtime(true);
@@ -45,14 +60,18 @@ class AcmeParserTest extends TestCase
     
     public function test_parser_ignores_invalid_lines_gracefully()
     {
+        $validLine1 = WebhookPayloadFactory::acme(1);
+        $validLine2 = WebhookPayloadFactory::acme(1);
+
+
+        $payload = implode("\n", [
+            trim($validLine1),
+            'INVALID//LINE',
+            trim($validLine2),
+        ]);
+
+
         $parser = new AcmeParser();
-
-        $payload = <<<EOT
-            SA6980000204608016212908//156,50//SAR//202506159000001//20250615
-            INVALID//LINE
-            SA6980000204608016212908//178,25//SAR//202506159000002//20250615
-            EOT;
-
         $transactions = $parser->parse($payload);
 
         $this->assertCount(2, $transactions);

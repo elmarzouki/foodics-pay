@@ -3,34 +3,50 @@
 namespace Tests\Unit;
 
 use Tests\TestCase;
+use Faker\Factory as Faker;
 
 use App\Http\Services\Webhook\Parsers\FoodicsParser;
-use Tests\WebhookPayloadGenerator;
+use Tests\Factories\WebhookPayloadFactory;
 
 class FoodicsParserTest extends TestCase
 {
+    protected $faker;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->faker = Faker::create();
+    }
+
     public function test_parses_valid_foodics_line()
     {
-        $line = 'SA6980000204608016212908#20250615156,50#SAR#202506159000001#note/debt payment march/internal_reference/A462JE81';
-        $parser = new FoodicsParser();
+        $accountId = 'SA' . $this->faker->numerify('###000000###########');
+        $date = now()->format('Ymd');
+        $amount = number_format($this->faker->randomFloat(2, 100, 9999), 2, ',', '');
+        $currency = 'SAR';
+        $reference = $date . $this->faker->numerify('######');
+        $meta = 'note/debt payment march/internal_reference/A462JE81';
 
+        $line = "{$accountId}#{$date}{$amount}#{$currency}#{$reference}#{$meta}";
+
+        $parser = new FoodicsParser();
         $results = $parser->parse($line);
 
         $this->assertCount(1, $results);
         $trx = $results[0];
 
-        $this->assertEquals('SA6980000204608016212908', $trx['bank_account_id']);
-        $this->assertEquals(15650, $trx['amount_cents']);
-        $this->assertEquals('SAR', $trx['currency']);
-        $this->assertEquals('202506159000001', $trx['reference']);
+        $amountCents = (int) str_replace(',', '', $amount);
+        $this->assertEquals($accountId, $trx['bank_account_id']);
+        $this->assertEquals($amountCents, $trx['amount_cents']);
+        $this->assertEquals($currency, $trx['currency']);
+        $this->assertEquals($reference, $trx['reference']);
         $this->assertEquals('debt payment march', $trx['meta']['note']);
     }
 
     public function test_parsing_1000_transactions_is_fast_enough()
     {
         $parser = new FoodicsParser();
-
-        $payload = WebhookPayloadGenerator::foodics(1000);
+        $payload = WebhookPayloadFactory::foodics(1000);
 
         $start = microtime(true);
         $transactions = $parser->parse($payload);
@@ -50,11 +66,14 @@ class FoodicsParserTest extends TestCase
     {
         $parser = new FoodicsParser();
 
-        $payload = <<<EOT
-        SA6980000204608016212908#20250615156,50#SAR#202506159000001#note/debt payment march/internal_reference/A462JE81
-        INVALID//LINE
-        SA6980000204608016212908#20250615178,25#SAR#202506159000002#note/debt payment march/internal_reference/A462JE81
-        EOT;
+        $validLine1 = WebhookPayloadFactory::foodics(1);
+        $validLine2 = WebhookPayloadFactory::foodics(1);
+
+        $payload = implode("\n", [
+            trim($validLine1),
+            "INVALID#LINE#FORMAT",
+            trim($validLine2),
+        ]);
 
         $transactions = $parser->parse($payload);
 

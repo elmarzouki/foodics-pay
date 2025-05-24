@@ -77,13 +77,13 @@ class IngestorTest extends TestCase
     public function test_it_fails_validation_for_invalid_currency()
     {
         $this->expectException(ValidationException::class);
-
+        $date = now()->format('Ymd');
         WebhookPayloadValidator::validate([
-            'bank_account_id' => 'SA6980000204608016212908',
-            'amount_cents' => 15650,
+            'bank_account_id' => 'SA' . $this->faker->numerify('###000000###########'),
+            'amount_cents' => number_format($this->faker->randomFloat(2, 100, 9999), 2, ',', ''),
             'currency' => 'INVALID', // not in enum
-            'reference' => '202506159000001',
-            'date' => now(),
+            'reference' => $date . $this->faker->numerify('######'),
+            'date' => $date,
         ]);
     }
 }
