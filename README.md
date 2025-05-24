@@ -1,13 +1,18 @@
-# Foodics pay Coding Challenge 
-This is a basic app to ingest incoming webhooks from different banks and construct transfer payloads.
+# Foodics Pay - Webhook Ingestion & XML Transfer Generator
+A Laravel-based system for processing webhook-based bank transactions and generating standardized XML files for money transfers.
 
 ## Content
-- Definitions/Facts
-- Assumptions
-- Tools/Architecture
-- Setup/Run
+- [Definitions/Facts](#definitions-header)
+- [Assumptions](#assumptions-header)
+- [Features](#features-header)
+- [Architecture](#architecture-header)
+- [Design Patterns](#design-patterns-header)
+- [Tech Stack](#tech-stack-header)
+- [Setup/Run](#setup-run-header)
+- [Usage](#usage-header)
 
-## Definitions/Facts
+<h2 id="definitions-header">Definitions/Facts</h2>
+
 * General:
     1. It is acceptable to over-engineer the solution.
 * Sending Money:
@@ -23,7 +28,8 @@ This is a basic app to ingest incoming webhooks from different banks and constru
     6. Amount (two decimals).
 
 
-## Assumptions
+<h2 id="assumptions-header">Assumptions</h2>
+
 * Client ID:
     - we will refer to the client as account. to narrow the scope. as the client might have multiple bank accounts.
     - will assume that the banks will send the account_id in the webhook payload as the first attribute.
@@ -46,7 +52,21 @@ Assuming that any bank can provide them by default.
     - Foodics Bank  => "SA6980000204608016212908#20250615156,50#SAR#202506159000001#note/debt payment march/internal_reference/A462JE81"
     - Acme Bank     => "SA6980000204608016212908//156,50//SAR//202506159000001//20250615"
 
-## Architecture:
+<h2 id="features-header">Features</h2>
+
+- Bank-specific webhook payload ingestion (e.g., Foodics, Acme)
+- Pluggable parsers via `WebhookParserInterface`
+- Data deduplication using Redis cache
+- Queue-based ingestion via RabbitMQ
+- Feature flag control to enable/disable ingestion dynamically
+- XML generation using Builder pattern
+- Automated job queuing and scheduled worker toggling
+- Enum-based currency and bank support
+- Clean test architecture with Faker-powered test factories
+
+
+<h2 id="architecture-header">Architecture</h2>
+
 Receiving Money
 ```
 [Client] ──> [POST /api/v1/webhook/{bank}]
@@ -102,21 +122,41 @@ Sending Money
     Store generated XML to storage
             
 ```
-## Tech Stack
-- Laravel
+
+<h2 id="design-patterns-header">Design Patterns</h2>
+
+- Strategy Pattern for parser selection
+- Enum Binding for bank & currency logic
+- Builder Pattern for XML generation
+- DTOs for type-safe transfer payloads
+- Feature Flags for dynamic toggling
+- Queueable Jobs for async ingestion
+
+<h2 id="tech-stack-header">Tech Stack</h2>
+
+- PHP 8.2+
+- Laravel 10+
 - Nginx
 - PostgreSQL
 - RabbitMQ
 - Redis
-- Docker
+- Docker & Docker Compose
 - Supervisor
 
 
-## Setup/Run
+<h2 id="setup-run-header">Setup/Run</h2>
+
+Clone the Repository
+```bash
+git clone https://github.com/elmarzouki/foodics-pay.git 
+cd foodics-pay
+```
 Using docker-compose:
 ```bash
+cp .env.example .env
 docker-compose up -d --build
-docker exec -it foodics-pay-app php artisan migrate
+docker-compose exec app composer install
+docker exec -it foodics-pay-app php artisan migrate --seed
 chmod +x scripts/control-webhook-worker.sh
 ```
 ## Test
@@ -144,7 +184,8 @@ docker exec -it foodics-pay-app tail -f storage/logs/control-worker.log
 docker exec -it foodics-pay-app cat storage/app/private/transfers/{transfer-ref}.xml
 ```
 
-## Usage
+<h2 id="usage-header">Usage</h2>
+
 health-check
 ```bash
 curl http://localhost:8000/api/v1/health_check
@@ -158,6 +199,11 @@ docker exec -it foodics-pay-app php artisan schedule:list
 ```
 
 Receiving Money
+```http
+POST /api/v1/webhook/{bank} 
+Content-Type: text/plain
+```
+
 ```bash
 curl -X POST http://localhost:8000/api/v1/webhook/foodics \
     -H "Content-Type: text/plain" \
@@ -170,6 +216,10 @@ curl -X POST http://localhost:8000/api/v1/webhook/acme \
 ```
 
 Sending Money
+```http
+POST /api/v1/transfer
+Content-Type: application/json
+```
 ```bash
 # reference and date are optional
 curl -X POST http://localhost:8000/api/v1/transfer \
@@ -188,3 +238,4 @@ curl -X POST http://localhost:8000/api/v1/transfer \
     "charge_details": "RB"
 }'
 ```
+
