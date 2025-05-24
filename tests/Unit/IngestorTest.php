@@ -2,84 +2,88 @@
 
 namespace Tests\Unit;
 
-use PHPUnit\Framework\TestCase;
-
-use App\Models\Currency;
+use App\Http\Services\Transaction\TransactionDTO;
+use App\Enums\Currency;
+use App\Http\Services\Transaction\TransactionIngestor;
 use App\Models\Transaction;
 use App\Validators\WebhookPayloadValidator;
-use App\Http\Services\Ingestor\TransactionIngestor;
-
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Contracts\Cache\Repository;
-use Illuminate\Validation\ValidationException;
-
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Foundation\Testing\WithFaker;
 use Mockery;
+use Tests\TestCase;
+use Illuminate\Validation\ValidationException;
+use Carbon\Carbon;
+use Tests\Factories\TransactionDTOFactory;
 
 class IngestorTest extends TestCase
 {
-    public function test_ingestor_skips_duplicate()
+    use RefreshDatabase, WithFaker;
+
+    protected function setUp(): void
     {
-        $cache = Mockery::mock(Cache::class);
-        $ingestor = new TransactionIngestor($cache);
-    
-        $trx = Transaction::make([
-            'bank_account_id' => 'SA6980000204608016212908',
-            'reference' => '202506159000001',
-            'amount_cents' => 15650,
-            'currency' => Currency::SAR,
-            'date' => now(),
-            'meta' => [],
-        ]);
-    
-        $cache->shouldReceive('add')->once()->andReturn(false);
-    
-        Log::shouldReceive('debug')->once()->with(Mockery::pattern('/already ingested/'));
-        $ingestor->ingest($trx); // Should skip actual DB insert
+        parent::setUp();
+        $this->setUpFaker();
     }
 
-    public function test_ingestor_ingests_1000_unique_transactions()
+    protected function tearDown(): void
+    {
+        Mockery::close();
+        parent::tearDown();
+    }
+    
+
+    public function test_it_skips_duplicate_transaction()
     {
         $cache = Mockery::mock(Repository::class);
+        $cache->shouldReceive('add')->once()->andReturn(false); // cache key already exists
+
+        $dto = TransactionDTOFactory::makeTransactionDTO();
+
+        Log::shouldReceive('debug')->once()->with(Mockery::pattern('/already ingested/'));
+
         $ingestor = new TransactionIngestor($cache);
+        $ingestor->ingest($dto);
+
+        $this->assertDatabaseMissing('transactions', [
+            'reference' => $dto->reference,
+            'bank_account_id' => $dto->bankAccountId,
+        ]);
+    }
+
+    public function test_it_ingests_1000_transactions_with_50_percent_skipped()
+    {
+        $cache = Mockery::mock(Repository::class);
 
         $inserted = 0;
 
         $cache->shouldReceive('add')->andReturnUsing(function () use (&$inserted) {
-            return $inserted++ % 2 === 0; // simulate 50% duplication
+            return $inserted++ % 2 === 0; // Simulate 50% deduplication
         });
 
-        $trx = new Transaction([
-            'bank_account_id' => 'SA6980000204608016212908',
-            'reference' => 'ref',
-            'amount_cents' => 15650,
-            'currency' => Currency::SAR,
-            'date' => now(),
-            'meta' => [],
-        ]);
+        $ingestor = new TransactionIngestor($cache);
 
         for ($i = 0; $i < 1000; $i++) {
-            $trx->reference = "ref{$i}";
-            $ingestor->ingest(clone $trx);
+            $dto = TransactionDTOFactory::makeTransactionDTO([
+                'reference' => "ref-$i",
+            ]);
+            $ingestor->ingest($dto);
         }
 
-        // Verify the ingestion ran 1000 times (some skipped)
-        $this->assertTrue(true);
+        $this->assertEquals(500, Transaction::count());
     }
 
-
-    public function test_invalid_currency_fails_validation()
+    public function test_it_fails_validation_for_invalid_currency()
     {
         $this->expectException(ValidationException::class);
 
         WebhookPayloadValidator::validate([
             'bank_account_id' => 'SA6980000204608016212908',
             'amount_cents' => 15650,
-            'currency' => 'INVALID',
+            'currency' => 'INVALID', // not in enum
             'reference' => '202506159000001',
             'date' => now(),
         ]);
     }
-
-    
 }

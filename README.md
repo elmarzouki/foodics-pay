@@ -121,6 +121,8 @@ chmod +x scripts/control-webhook-worker.sh
 ```
 ## Test
 ```bash
+docker exec -it foodics-pay-app php artisan migrate:fresh --env=testing
+
 docker exec -it foodics-pay-app php artisan test
 ```
 ## Monitor

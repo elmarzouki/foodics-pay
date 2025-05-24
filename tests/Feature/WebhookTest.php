@@ -14,7 +14,15 @@ class WebhookTest extends TestCase
         Queue::fake();
     
         $payload = "SA6980000204608016212908#20250615156,50#SAR#202506159000001#note/debt payment march/internal_reference/A462JE81";
-        $response = $this->postJson('/api/v1/webhook/foodics', $payload);
+        $response = $this->call(
+            'POST',
+            '/api/v1/webhook/foodics',
+            [],
+            [],
+            [],
+            ['CONTENT_TYPE' => 'text/plain'],
+            $payload
+        );
     
         $response->assertStatus(202);
         Queue::assertPushed(ProcessWebhookPayload::class, function ($job) use ($payload) {
@@ -26,8 +34,14 @@ class WebhookTest extends TestCase
     {
         Queue::fake();
         $payload = WebhookPayloadGenerator::foodics(1000);
-        $response = $this->postJson('/api/v1/webhook/foodics', $payload);
-
+        $response = $this->call(
+            'POST',
+            '/api/v1/webhook/foodics',
+            [],
+            [],
+            [],
+            ['CONTENT_TYPE' => 'text/plain'],
+            $payload);
         $response->assertStatus(202);
         Queue::assertPushed(ProcessWebhookPayload::class, function ($job) use ($payload) {
             return $job->payload === $payload && $job->bank === 'foodics';
